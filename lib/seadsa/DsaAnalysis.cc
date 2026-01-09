@@ -14,6 +14,7 @@
 #include "seadsa/Info.hh"
 #include "seadsa/InitializePasses.hh"
 #include "seadsa/Stats.hh"
+#include "seadsa/TypeInference.hh"
 #include "seadsa/support/RemovePtrToInt.hh"
 
 namespace seadsa {
@@ -54,6 +55,7 @@ void DsaAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<LoopInfoWrapperPass>();
   AU.addRequired<AllocWrapInfo>();
   AU.addRequired<DsaLibFuncInfo>();
+  AU.addRequired<TypeInferenceWrapperPass>();
   AU.setPreservesAll();
 }
 
@@ -80,6 +82,11 @@ bool DsaAnalysis::runOnModule(Module &M) {
   m_allocInfo->initialize(M, this);
   m_dsaLibFuncInfo->initialize(M);
   auto &cg = getAnalysis<CallGraphWrapperPass>().getCallGraph();
+
+  for (Function &F : M) {
+    if (F.isDeclaration()) continue;
+    (void)getAnalysis<TypeInferenceWrapperPass>(F).getResult();
+  }
 
   switch (DsaGlobalAnalysis) {
   case GlobalAnalysisKind::CONTEXT_INSENSITIVE:
@@ -131,5 +138,6 @@ INITIALIZE_PASS_DEPENDENCY(AllocWrapInfo)
 INITIALIZE_PASS_DEPENDENCY(CallGraphWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(DsaLibFuncInfo)
+INITIALIZE_PASS_DEPENDENCY(TypeInferenceWrapperPass)
 INITIALIZE_PASS_END(DsaAnalysis, "dsa-wrapper",
                     "Entry point for all SeaDsa clients", false, false)

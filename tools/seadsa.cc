@@ -163,6 +163,7 @@ int main(int argc, char **argv) {
   llvm::initializeDsaLibFuncInfoPass(Registry);
   llvm::initializeAllocSiteInfoPass(Registry);
   llvm::initializeCompleteCallGraphPass(Registry);
+  llvm::initializeTypeInferenceWrapperPassPass(Registry);
 
   llvm::initializeSeaDsaAAWrapperPassPass(Registry);
 

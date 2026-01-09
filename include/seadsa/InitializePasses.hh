@@ -13,4 +13,5 @@ void initializeDsaInfoPassPass(PassRegistry &);
 void initializeShadowMemPassPass(PassRegistry &);
 void initializeStripShadowMemPassPass(PassRegistry &);
 void initializeSeaDsaAAWrapperPassPass(PassRegistry &);
+void initializeTypeInferenceWrapperPassPass(PassRegistry &);
 } // namespace llvm
