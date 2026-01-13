@@ -27,4 +27,5 @@ add_llvm_library (SeaDsaAnalysis DISABLE_LLVM_LINK_LLVM_DYLIB
   SeaMemorySSA.cc
   SeaDsaAliasAnalysis.cc
   DsaLibFuncInfo.cc
+  TypeInference.cc
   )
