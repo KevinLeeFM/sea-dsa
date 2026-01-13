@@ -89,8 +89,41 @@ public:
   void print(AbsType T, llvm::raw_ostream &OS) const;
 
 private:
-  struct Key;
-  struct KeyInfo;
+  struct Key {
+    TypeNode::Kind K = TypeNode::Kind::Top;
+    const llvm::Type *Scalar = nullptr;
+    llvm::SmallVector<AbsType, 4> Children;
+  };
+
+  struct KeyInfo {
+    static Key getEmptyKey() {
+      Key K;
+      K.Scalar = reinterpret_cast<llvm::Type *>(1);
+      return K;
+    }
+    static Key getTombstoneKey() {
+      Key K;
+      K.Scalar = reinterpret_cast<llvm::Type *>(2);
+      return K;
+    }
+    static unsigned getHashValue(const Key &K) {
+      using llvm::hash_combine;
+      using llvm::hash_combine_range;
+      unsigned H = hash_combine(static_cast<unsigned>(K.K), K.Scalar);
+      return hash_combine(H, hash_combine_range(K.Children.begin(),
+                                                K.Children.end()));
+    }
+    static bool isEqual(const Key &LHS, const Key &RHS) {
+      if (LHS.Scalar != RHS.Scalar) return false;
+      if (LHS.K != RHS.K) return false;
+      if (LHS.Children.size() != RHS.Children.size()) return false;
+      for (size_t I = 0, E = LHS.Children.size(); I != E; ++I) {
+        if (LHS.Children[I] != RHS.Children[I]) return false;
+      }
+      return true;
+    }
+  };
+
   AbsType uniquedInsert(Key K);
   bool formsCycle(AbsType Candidate, llvm::ArrayRef<AbsType> Children) const;
 

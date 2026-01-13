@@ -19,6 +19,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
+#include <cassert>
 
 #define DEBUG_TYPE "seadsa-typeinf"
 
@@ -172,12 +173,17 @@ AbstractType::Kind AbstractType::kind() const {
 }
 
 AbsType AbstractType::pointee() const {
-  if (!m_type || m_type->Children.empty()) return nullptr;
+  if (!m_type) return nullptr;
+  if (m_type->K != TypeNode::Kind::Ptr && m_type->K != TypeNode::Kind::Seq)
+    return nullptr;
+  if (m_type->Children.empty()) return nullptr;
   return m_type->Children.front();
 }
 
 ArrayRef<AbsType> AbstractType::elements() const {
   if (!m_type) return {};
+  if (m_type->K != TypeNode::Kind::Prod && m_type->K != TypeNode::Kind::Sum)
+    return {};
   return m_type->Children;
 }
 
@@ -190,41 +196,6 @@ bool AbstractType::equals(const AbstractType &Other) const {
 //===----------------------------------------------------------------------===
 // AbstractTypeContext
 //===----------------------------------------------------------------------===
-
-struct AbstractTypeContext::Key {
-  TypeNode::Kind K = TypeNode::Kind::Top;
-  const llvm::Type *Scalar = nullptr;
-  SmallVector<AbsType, 4> Children;
-};
-
-struct AbstractTypeContext::KeyInfo {
-  static Key getEmptyKey() {
-    Key K;
-    K.Scalar = reinterpret_cast<llvm::Type *>(1);
-    return K;
-  }
-  static Key getTombstoneKey() {
-    Key K;
-    K.Scalar = reinterpret_cast<llvm::Type *>(2);
-    return K;
-  }
-  static unsigned getHashValue(const Key &K) {
-    using llvm::hash_combine;
-    using llvm::hash_combine_range;
-    unsigned H = hash_combine(static_cast<unsigned>(K.K), K.Scalar);
-    return hash_combine(H, hash_combine_range(K.Children.begin(),
-                                              K.Children.end()));
-  }
-  static bool isEqual(const Key &LHS, const Key &RHS) {
-    if (LHS.Scalar != RHS.Scalar) return false;
-    if (LHS.K != RHS.K) return false;
-    if (LHS.Children.size() != RHS.Children.size()) return false;
-    for (size_t I = 0, E = LHS.Children.size(); I != E; ++I) {
-      if (LHS.Children[I] != RHS.Children[I]) return false;
-    }
-    return true;
-  }
-};
 
 AbstractTypeContext::AbstractTypeContext() {
   Key BottomKey;
@@ -269,6 +240,9 @@ AbsType AbstractTypeContext::mkBottom() { return m_bottom; }
 AbsType AbstractTypeContext::mkTop() { return m_top; }
 
 AbsType AbstractTypeContext::mkScalar(const llvm::Type *Ty) {
+  assert(Ty && "mkScalar requires non-null llvm::Type*");
+  assert((Ty->isIntegerTy() || Ty->isFloatingPointTy()) &&
+         "mkScalar expects an integer or floating-point LLVM type");
   Key K;
   K.K = TypeNode::Kind::Scalar;
   K.Scalar = Ty;
@@ -276,6 +250,7 @@ AbsType AbstractTypeContext::mkScalar(const llvm::Type *Ty) {
 }
 
 AbsType AbstractTypeContext::mkPtr(AbsType Pointee) {
+  assert(Pointee && "mkPtr requires non-null pointee type");
   Key K;
   K.K = TypeNode::Kind::Ptr;
   K.Children.push_back(Pointee);
@@ -285,6 +260,7 @@ AbsType AbstractTypeContext::mkPtr(AbsType Pointee) {
 }
 
 AbsType AbstractTypeContext::mkSeq(AbsType Element) {
+  assert(Element && "mkSeq requires non-null element type");
   Key K;
   K.K = TypeNode::Kind::Seq;
   K.Children.push_back(Element);
@@ -294,6 +270,8 @@ AbsType AbstractTypeContext::mkSeq(AbsType Element) {
 }
 
 AbsType AbstractTypeContext::mkProd(ArrayRef<AbsType> Elements) {
+  assert(llvm::all_of(Elements, [](AbsType E) { return E; }) &&
+         "mkProd requires non-null element types");
   Key K;
   K.K = TypeNode::Kind::Prod;
   for (AbsType E : Elements) {
@@ -309,6 +287,8 @@ AbsType AbstractTypeContext::mkProd(ArrayRef<AbsType> Elements) {
 }
 
 AbsType AbstractTypeContext::mkSum(ArrayRef<AbsType> Summands) {
+  assert(llvm::all_of(Summands, [](AbsType S) { return S; }) &&
+         "mkSum requires non-null summands; pass Top explicitly if needed");
   SmallVector<AbsType, 8> Flat;
   for (AbsType S : Summands) {
     if (!S || S == m_bottom) continue;
