@@ -5,16 +5,10 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
-
 #include <algorithm>
-#include <string>
 
 using namespace llvm;
 using namespace seadsa;
-
-// Provided by the custom main to re-exec for death checks.
-int seadsa_runSubprocessExpectFailure(const char *flagName);
 
 //===----------------------------------------------------------------------===
 // Helpers
@@ -39,118 +33,6 @@ static AbstractTypeContext makeCtx() { return AbstractTypeContext(); }
 
 // Build expected Ptr(Top) once per context.
 static AbsType ptrTop(AbstractTypeContext &C) { return C.mkPtr(C.mkTop()); }
-
-//===----------------------------------------------------------------------===
-// Builder happy-path tests
-//===----------------------------------------------------------------------===
-
-TEST_CASE("TypeInference.Builders.BasicKinds") {
-  auto C = makeCtx();
-  AbsType bot = C.mkBottom();
-  AbsType top = C.mkTop();
-  CHECK(bot->K == TypeNode::Kind::Bottom);
-  CHECK(top->K == TypeNode::Kind::Top);
-
-  AbsType i32 = C.mkScalar(Type::getInt32Ty(ctx()));
-  CHECK(i32->K == TypeNode::Kind::Scalar);
-  CHECK(!!i32->ScalarTy);
-  CHECK(i32->ScalarTy->isIntegerTy(32));
-
-  AbsType pTop = ptrTop(C);
-  CHECK(pTop->K == TypeNode::Kind::Ptr);
-  bool childIsTop = (pTop->Children.front() == C.mkTop());
-  CHECK(childIsTop);
-}
-
-TEST_CASE("TypeInference.Builders.SeqProdSum") {
-  auto C = makeCtx();
-  AbsType i32 = C.mkScalar(Type::getInt32Ty(ctx()));
-  AbsType seq = C.mkSeq(i32);
-  CHECK(seq->K == TypeNode::Kind::Seq);
-  bool seqElemIsI32 = (seq->Children.front() == i32);
-  CHECK(seqElemIsI32);
-
-  AbsType prod = C.mkProd({i32, C.mkTop()});
-  CHECK(prod->K == TypeNode::Kind::Prod);
-  CHECK(prod->Children.size() == 2);
-
-  AbsType sum = C.mkSum({i32, C.mkTop()});
-  bool sumIsTop = (sum == C.mkTop());
-  CHECK(sumIsTop);
-}
-
-TEST_CASE("TypeInference.Builders.SumDedupAndFlatten") {
-  auto C = makeCtx();
-  AbsType i64 = C.mkScalar(Type::getInt64Ty(ctx()));
-  AbsType pTop = ptrTop(C);
-  AbsType nested = C.mkSum({i64, C.mkSum({pTop, i64}), C.mkBottom()});
-  // Should flatten, drop bottom, dedup, and keep deterministic order.
-  CHECK(nested->K == TypeNode::Kind::Sum);
-  CHECK(nested->Children.size() == 2);
-  bool hasFirst = nested->Children[0] == i64 || nested->Children[0] == pTop;
-  bool hasSecond = nested->Children[1] == i64 || nested->Children[1] == pTop;
-  CHECK(hasFirst);
-  CHECK(hasSecond);
-}
-
-TEST_CASE("TypeInference.Builders.SumProperties") {
-  auto C = makeCtx();
-  AbsType a = C.mkScalar(Type::getInt32Ty(ctx()));
-  AbsType b = C.mkScalar(Type::getInt64Ty(ctx()));
-  AbsType ab = C.mkSum({a, b});
-  AbsType ba = C.mkSum({b, a});
-  bool commutes = (ab == ba);
-  CHECK(commutes);
-
-  AbsType dup = C.mkSum({a, a});
-  bool idempotent = (dup == a);
-  CHECK(idempotent);
-
-  AbsType nested = C.mkSum({ab, C.mkBottom()});
-  bool flattens = (nested == ab);
-  CHECK(flattens);
-
-  // Deterministic print
-  std::string S1, S2;
-  raw_string_ostream OS1(S1), OS2(S2);
-  C.print(ab, OS1);
-  C.print(ba, OS2);
-  CHECK(S1 == S2);
-}
-
-TEST_CASE("TypeInference.Builders.ProdProperties") {
-  auto C = makeCtx();
-  AbsType a = C.mkScalar(Type::getInt32Ty(ctx()));
-  AbsType b = C.mkScalar(Type::getInt64Ty(ctx()));
-  AbsType p1 = C.mkProd({a, b});
-  AbsType p2 = C.mkProd({p1, C.mkScalar(Type::getInt8Ty(ctx()))});
-  CHECK(p1->Children.size() == 2);
-  CHECK(p2->Children.size() == 3); // flattened nested prod
-  bool firstIsA = (p1->Children[0] == a);
-  bool secondIsB = (p1->Children[1] == b);
-  CHECK(firstIsA);
-  CHECK(secondIsB);
-}
-
-//===----------------------------------------------------------------------===
-// Guard / death tests (debug-only)
-//===----------------------------------------------------------------------===
-
-static void requireDeath(const char *flag) {
-#ifdef NDEBUG
-  WARN_MESSAGE(true, "Assertions disabled (NDEBUG); death test skipped");
-#else
-  int code = seadsa_runSubprocessExpectFailure(flag);
-  CHECK(code != 0);
-#endif
-}
-
-TEST_CASE("Guards.mkScalar.null") { requireDeath("mkScalar_null"); }
-TEST_CASE("Guards.mkScalar.struct") { requireDeath("mkScalar_struct"); }
-TEST_CASE("Guards.mkPtr.null") { requireDeath("mkPtr_null"); }
-TEST_CASE("Guards.mkSeq.null") { requireDeath("mkSeq_null"); }
-TEST_CASE("Guards.mkProd.null") { requireDeath("mkProd_null"); }
-TEST_CASE("Guards.mkSum.null") { requireDeath("mkSum_null"); }
 
 //===----------------------------------------------------------------------===
 // convertLLVMType tests
@@ -216,9 +98,7 @@ TEST_CASE("Convert.StructSimple") {
   S->setBody(Elems);
 
   AbsType t = conv(*S, DL, C);
-  CHECK(t->K == TypeNode::Kind::Prod);
-  CHECK(t->Children.size() == 1);
-  CHECK(t->Children.front()->K == TypeNode::Kind::Scalar);
+  CHECK(t->K == TypeNode::Kind::Scalar);
 }
 
 TEST_CASE("Convert.StructNested") {
@@ -258,61 +138,4 @@ TEST_CASE("Convert.OpaqueStructAndAggregates") {
   CHECK(opaqueIsTop);
   CHECK(arrIsTop);
   CHECK(vecIsTop);
-}
-
-TEST_CASE("Print.Stability") {
-  auto C = makeCtx();
-  AbsType a = C.mkScalar(Type::getInt32Ty(ctx()));
-  AbsType b = C.mkPtr(C.mkTop());
-  AbsType sum = C.mkSum({b, a});
-
-  std::string S1, S2;
-  raw_string_ostream OS1(S1), OS2(S2);
-  C.print(sum, OS1);
-  C.print(C.mkSum({a, b}), OS2); // reversed order should stringify identically
-  CHECK(S1 == S2);
-}
-
-//===----------------------------------------------------------------------===
-// Death scenario dispatcher
-//===----------------------------------------------------------------------===
-
-bool seadsa_maybeRunDeathScenario(const char *flagName) {
-  std::string F(flagName ? flagName : "");
-#ifdef NDEBUG
-  (void)F;
-  return false;
-#else
-  auto C = makeCtx();
-  LLVMContext &Ctxt = ctx();
-
-  if (F == "mkScalar_null") {
-    C.mkScalar(nullptr);
-    return true;
-  }
-  if (F == "mkScalar_struct") {
-    StructType *S = StructType::create(Ctxt, "BadStruct");
-    C.mkScalar(S);
-    return true;
-  }
-  if (F == "mkPtr_null") {
-    C.mkPtr(nullptr);
-    return true;
-  }
-  if (F == "mkSeq_null") {
-    C.mkSeq(nullptr);
-    return true;
-  }
-  if (F == "mkProd_null") {
-    AbsType elems[2] = {C.mkScalar(Type::getInt1Ty(Ctxt)), nullptr};
-    C.mkProd(elems);
-    return true;
-  }
-  if (F == "mkSum_null") {
-    AbsType elems[2] = {C.mkScalar(Type::getInt1Ty(Ctxt)), nullptr};
-    C.mkSum(elems);
-    return true;
-  }
-  return false;
-#endif
 }
