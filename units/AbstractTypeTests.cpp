@@ -279,6 +279,30 @@ TEST_CASE("Lattice.SumOfProductsDistribution") {
   CHECK(C.equivalent(distributed, combined));
 }
 
+TEST_CASE("Utility.MayContainPointer.Positive") {
+  auto C = makeCtx();
+  AbsType i32 = C.mkScalar(Type::getInt32Ty(ctx()));
+  AbsType ptrI = C.mkPtr(i32);
+
+  CHECK(C.mayContainPointer(ptrI));
+  CHECK(C.mayContainPointer(C.mkProd({i32, C.mkTop()})));
+  CHECK(C.mayContainPointer(C.mkSum({ptrI, i32})));
+  CHECK(C.mayContainPointer(C.mkProd({ptrI, i32})));
+  CHECK(C.mayContainPointer(C.mkSeq(ptrI)));
+}
+
+TEST_CASE("Utility.MayContainPointer.Negative") {
+  auto C = makeCtx();
+  AbsType i32 = C.mkScalar(Type::getInt32Ty(ctx()));
+  AbsType i64 = C.mkScalar(Type::getInt64Ty(ctx()));
+
+  CHECK_FALSE(C.mayContainPointer(i32));
+  CHECK_FALSE(C.mayContainPointer(C.mkBottom()));
+  CHECK_FALSE(C.mayContainPointer(C.mkProd({i32, i64})));
+  CHECK_FALSE(C.mayContainPointer(C.mkSeq(i32)));
+  CHECK_FALSE(C.mayContainPointer(C.mkSum({i32, C.mkBottom()})));
+}
+
 TEST_CASE("Print.Stability") {
   auto C = makeCtx();
   AbsType a = C.mkScalar(Type::getInt32Ty(ctx()));

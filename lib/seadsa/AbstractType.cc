@@ -429,6 +429,36 @@ AbsType AbstractTypeContext::trunc(AbsType T, unsigned Index) {
   return m_bottom;
 }
 
+bool AbstractTypeContext::mayContainPointer(AbsType T) {
+  AbsType N = normalize(T);
+  if (isBottom(N)) return false;
+  if (isTop(N)) return true;
+
+  switch (N->K) {
+  case TypeNode::Kind::Ptr:
+    return true;
+  case TypeNode::Kind::Seq:
+    return mayContainPointer(N->Children.front());
+  case TypeNode::Kind::Prod: {
+    AbsType L = nullptr, R = nullptr;
+    splitProdLeftRight(N, L, R, *this);
+    if (isTop(R)) return true;
+    return mayContainPointer(L) || mayContainPointer(R);
+  }
+  case TypeNode::Kind::Sum:
+    for (AbsType S : N->Children) {
+      if (mayContainPointer(S)) return true;
+    }
+    return false;
+  case TypeNode::Kind::Scalar:
+  case TypeNode::Kind::Bottom:
+  case TypeNode::Kind::Top:
+    return false;
+  }
+
+  return false;
+}
+
 bool AbstractTypeContext::leq(AbsType A, AbsType B) {
   return leqImpl(normalize(A), normalize(B), *this);
 }

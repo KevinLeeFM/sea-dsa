@@ -96,6 +96,10 @@ public:
   /// Truncation (suffix from index, per spec).
   AbsType trunc(AbsType T, unsigned Index);
 
+  /// Return true if T may contain a pointer anywhere inside.
+  /// Prototype helper intended for upcoming SeaDSA integration.
+  bool mayContainPointer(AbsType T);
+
 private:
   struct Key {
     TypeNode::Kind K = TypeNode::Kind::Top;
